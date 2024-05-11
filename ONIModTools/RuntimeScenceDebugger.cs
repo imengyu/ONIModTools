@@ -243,6 +243,11 @@ namespace OxygenNotIncluded.Mods.ONIModTools
       if (allPage > 0)
       {
         GUILayout.BeginHorizontal();
+        if (GUILayout.Button("<< First"))
+        {
+          if (currentPage > 1)
+            setPage(1);
+        }
         if (GUILayout.Button("← Prev"))
         {
           if (currentPage > 1)
@@ -253,6 +258,11 @@ namespace OxygenNotIncluded.Mods.ONIModTools
         {
           if (currentPage < allPage)
             setPage(currentPage + 1);
+        }
+        if (GUILayout.Button("Last >>"))
+        {
+          if (currentPage < allPage)
+            setPage(allPage);
         }
         GUILayout.EndHorizontal();
       }
@@ -266,6 +276,8 @@ namespace OxygenNotIncluded.Mods.ONIModTools
       if (allPage > 0)
         RenderPager(allPage, scenseTree.children.Count, scenseTree.page, (page) => scenseTree.page = page);
 
+      if (scenseTree.page > 0 && scenseTree.page - 1 * PAGE_SIZE > scenseTree.children.Count)
+        scenseTree.page = 1;
       for (
         int i = (scenseTree.page > 0 ? scenseTree.page - 1 : 1) * PAGE_SIZE;
         (allPage == 0 || i < scenseTree.page * PAGE_SIZE) && i < scenseTree.children.Count;
@@ -372,6 +384,7 @@ namespace OxygenNotIncluded.Mods.ONIModTools
       public Type ValueType = null;
       public string Name = null;
       public object Value = null;
+      public object[] TempValues = new object[8];
       public bool CanSet = true;
       public bool Error = false;
       public bool HideInInspector = false;
@@ -427,6 +440,7 @@ namespace OxygenNotIncluded.Mods.ONIModTools
           item.Value = field.GetValue(currentComponent);
           item.HideInInspector = field.GetCustomAttribute(typeof(HideInInspector), true) != null;
           currentComponentProps.Add(item);
+          RenderPropertyEditorItemPreApplyData(item);
         } 
         catch
         {
@@ -454,6 +468,7 @@ namespace OxygenNotIncluded.Mods.ONIModTools
           item.Value = property.GetValue(currentComponent);
           item.HideInInspector = property.GetCustomAttribute(typeof(HideInInspector), true) != null;
           currentComponentProps.Add(item);
+          RenderPropertyEditorItemPreApplyData(item);
         }
         catch
         {
@@ -465,6 +480,8 @@ namespace OxygenNotIncluded.Mods.ONIModTools
     void RaycastObjects()
     {
       searchName = "";
+      currentGameObject = null;
+      currentComponent = null;
       var canvases = FindObjectsOfType<Canvas>();
       var result = new List<GameObject>();
       foreach (Canvas canvas in canvases)
@@ -483,6 +500,7 @@ namespace OxygenNotIncluded.Mods.ONIModTools
         }
       }
       scenseTree.children.Clear();
+      scenseTree.page = 1;
       foreach (var item in result)
         scenseTree.children.Add(new TreeItem { 
           gameObject = item,
@@ -701,24 +719,32 @@ namespace OxygenNotIncluded.Mods.ONIModTools
           return str;
         }
 
-        data.Temp.Clear();
-        data.Temp.Append("{ ");
-        if (data.Field != null)
+        try
         {
-          data.Temp.Append(data.Field.Name);
-          data.Temp.Append(" = \"");
-          data.Temp.Append(data.Field.GetValue(value).ToString());
-          data.Temp.Append("\", ");
+          data.Temp.Clear();
+          data.Temp.Append("{ ");
+          if (data.Field != null)
+          {
+            data.Temp.Append(data.Field.Name);
+            data.Temp.Append(" = \"");
+            data.Temp.Append(data.Field.GetValue(value).ToString());
+            data.Temp.Append("\", ");
+          }
+          if (data.Property != null)
+          {
+            data.Temp.Append(data.Property.Name);
+            data.Temp.Append(" = \"");
+            data.Temp.Append(data.Property.GetValue(value).ToString());
+            data.Temp.Append("\", ");
+          }
+          data.Temp.Append("... }");
+          return data.Temp.ToString();
         }
-        if (data.Property != null)
+        catch
         {
-          data.Temp.Append(data.Property.Name);
-          data.Temp.Append(" = \"");
-          data.Temp.Append(data.Property.GetValue(value).ToString());
-          data.Temp.Append("\", ");
+          data.HasField = false;
+          return "";
         }
-        data.Temp.Append("... }");
-        return data.Temp.ToString();
       }
 
       data = new ObjectFastStringData();
@@ -765,9 +791,10 @@ namespace OxygenNotIncluded.Mods.ONIModTools
       {
         if (GUILayout.Button("Set", GUILayout.Width(36)))
         {
-          if (item.GetSet != null) item.GetSet.Set(item.Value);
-          if (item.Field != null) item.Field.SetValue(currentComponent, item.Value);
-          if (item.Property != null) item.Property.SetValue(currentComponent, item.Value);
+          if (item.GetSet != null) item.GetSet.Set(RenderPropertyEditorItemBeforeSaveData(item));
+          if (item.Field != null) item.Field.SetValue(currentComponent, RenderPropertyEditorItemBeforeSaveData(item));
+          if (item.Property != null) item.Property.SetValue(currentComponent, RenderPropertyEditorItemBeforeSaveData(item));
+          RenderPropertyEditorItemPreApplyData(item);
         }
       }
       else
@@ -775,6 +802,56 @@ namespace OxygenNotIncluded.Mods.ONIModTools
       if (GUILayout.Button("Copy", GUILayout.Width(44)))
         GUIUtility.systemCopyBuffer = item.Name + " " + (item.Value == null ? "null" : item.Value.ToString());
       GUILayout.EndHorizontal();
+    }
+
+    object RenderPropertyEditorItemBeforeSaveData(PropItem item)
+    {
+      if (item.ValueType == typeof(Vector2))
+        return new Vector2((float)item.TempValues[0], (float)item.TempValues[1]);
+      if (item.ValueType == typeof(Vector3))
+        return new Vector3((float)item.TempValues[0], (float)item.TempValues[1], (float)item.TempValues[2]);
+      if (item.ValueType == typeof(Quaternion))
+        return new Quaternion((float)item.TempValues[0], (float)item.TempValues[1], (float)item.TempValues[2], (float)item.TempValues[3]);
+      if (item.ValueType == typeof(Color))
+        return new Color((float)item.TempValues[0], (float)item.TempValues[1], (float)item.TempValues[2], (float)item.TempValues[3]);
+      if (item.ValueType == typeof(Rect))
+        return new Rect((float)item.TempValues[0], (float)item.TempValues[1], (float)item.TempValues[2], (float)item.TempValues[3]);
+      return item.Value;
+    }
+    void RenderPropertyEditorItemPreApplyData(PropItem item)
+    {
+      if (item.ValueType == typeof(Vector2))
+      {
+        item.TempValues[0] = ((Vector2)item.Value).x;
+        item.TempValues[1] = ((Vector2)item.Value).y;
+      }
+      if (item.ValueType == typeof(Vector3))
+      {
+        item.TempValues[0] = ((Vector3)item.Value).x;
+        item.TempValues[1] = ((Vector3)item.Value).y;
+        item.TempValues[2] = ((Vector3)item.Value).z;
+      }
+      if (item.ValueType == typeof(Quaternion))
+      {
+        item.TempValues[0] = ((Quaternion)item.Value).x;
+        item.TempValues[1] = ((Quaternion)item.Value).y;
+        item.TempValues[2] = ((Quaternion)item.Value).z;
+        item.TempValues[3] = ((Quaternion)item.Value).w;
+      }
+      if (item.ValueType == typeof(Color))
+      {
+        item.TempValues[0] = ((Color)item.Value).r;
+        item.TempValues[1] = ((Color)item.Value).g;
+        item.TempValues[2] = ((Color)item.Value).b;
+        item.TempValues[3] = ((Color)item.Value).a;
+      }
+      if (item.ValueType == typeof(Rect))
+      {
+        item.TempValues[0] = ((Rect)item.Value).x;
+        item.TempValues[1] = ((Rect)item.Value).y;
+        item.TempValues[2] = ((Rect)item.Value).width;
+        item.TempValues[3] = ((Rect)item.Value).height;
+      }
     }
     void RenderPropertyEditorItem(Type type, PropItem item, out bool hasEdtior)
     {
@@ -844,80 +921,77 @@ namespace OxygenNotIncluded.Mods.ONIModTools
         }
         if (type == typeof(Vector2))
         {
-          var valueV = (Vector2)item.Value;
-          var text = GUILayout.TextField(valueV.x.ToString());
+          var text = GUILayout.TextField(item.TempValues[0].ToString());
           if (float.TryParse(text, out var v))
-            valueV.x = v;
-          text = GUILayout.TextField(valueV.y.ToString());
+            item.TempValues[0] = v;
+          text = GUILayout.TextField(item.TempValues[1].ToString());
           if (float.TryParse(text, out v))
-            valueV.y = v;
+            item.TempValues[1] = v;
           return;
         }
         if (type == typeof(Vector3))
         {
-          var valueV = (Vector3)item.Value;
-          var text = GUILayout.TextField(valueV.x.ToString());
+          var text = GUILayout.TextField(item.TempValues[0].ToString());
           if (float.TryParse(text, out var v))
-            valueV.x = v;
-          text = GUILayout.TextField(valueV.y.ToString());
+            item.TempValues[0] = v;
+          text = GUILayout.TextField(item.TempValues[1].ToString());
           if (float.TryParse(text, out v))
-            valueV.y = v;
-          text = GUILayout.TextField(valueV.z.ToString());
+            item.TempValues[1] = v;
+          text = GUILayout.TextField(item.TempValues[2].ToString());
           if (float.TryParse(text, out v))
-            valueV.z = v;
+            item.TempValues[2] = v;
           return;
         }
         if (type == typeof(Quaternion))
         {
-          var valueV = (Quaternion)item.Value;
-          var text = GUILayout.TextField(valueV.x.ToString());
+          var text = GUILayout.TextField(item.TempValues[0].ToString());
           if (float.TryParse(text, out var v))
-            valueV.x = v;
-          text = GUILayout.TextField(valueV.y.ToString());
+            item.TempValues[0] = v;
+          text = GUILayout.TextField(item.TempValues[1].ToString());
           if (float.TryParse(text, out v))
-            valueV.y = v;
-          text = GUILayout.TextField(valueV.z.ToString());
+            item.TempValues[1] = v;
+          text = GUILayout.TextField(item.TempValues[2].ToString());
           if (float.TryParse(text, out v))
-            valueV.z = v;
-          text = GUILayout.TextField(valueV.w.ToString());
+            item.TempValues[2] = v;
+          text = GUILayout.TextField(item.TempValues[3].ToString());
           if (float.TryParse(text, out v))
-            valueV.w = v;
+            item.TempValues[3] = v;
           return;
         }
-        if (type == typeof(Matrix4x4)) return;
-        if (type == typeof(Matrix2x3)) return;
+        if (type == typeof(Matrix4x4)) 
+          return; //TODO
+        if (type == typeof(Matrix2x3)) 
+          return; //TODO
         if (type == typeof(Color))
         {
-          var valueV = (Color)item.Value;
-          var text = GUILayout.TextField(valueV.r.ToString());
+          var text = GUILayout.TextField(item.TempValues[0]?.ToString() ?? "");
           if (float.TryParse(text, out var v))
-            valueV.r = v;
-          text = GUILayout.TextField(valueV.g.ToString());
+            item.TempValues[0] = v;
+          text = GUILayout.TextField(item.TempValues[1].ToString());
           if (float.TryParse(text, out v))
-            valueV.g = v;
-          text = GUILayout.TextField(valueV.b.ToString());
+            item.TempValues[1] = v;
+          text = GUILayout.TextField(item.TempValues[2].ToString());
           if (float.TryParse(text, out v))
-            valueV.b = v;
-          text = GUILayout.TextField(valueV.a.ToString());
+            item.TempValues[2] = v;
+          text = GUILayout.TextField(item.TempValues[3].ToString());
           if (float.TryParse(text, out v))
-            valueV.a = v;
+            item.TempValues[3] = v;
           return;
         }
         if (type == typeof(Rect))
         {
-          var valueV = (Rect)item.Value;
-          var text = GUILayout.TextField(valueV.x.ToString());
+          var text = GUILayout.TextField(item.TempValues[0].ToString());
           if (float.TryParse(text, out var v))
-            valueV.x = v;
-          text = GUILayout.TextField(valueV.y.ToString());
+            item.TempValues[0] = v;
+          text = GUILayout.TextField(item.TempValues[1].ToString());
           if (float.TryParse(text, out v))
-            valueV.y = v;
-          text = GUILayout.TextField(valueV.width.ToString());
+            item.TempValues[1] = v;
+          text = GUILayout.TextField(item.TempValues[2].ToString());
           if (float.TryParse(text, out v))
-            valueV.width = v;
-          text = GUILayout.TextField(valueV.height.ToString());
+            item.TempValues[2] = v;
+          text = GUILayout.TextField(item.TempValues[3].ToString());
           if (float.TryParse(text, out v))
-            valueV.height = v;
+            item.TempValues[3] = v;
           return;
         }
         if (type == typeof(Sprite))
